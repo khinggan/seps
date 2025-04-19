@@ -18,7 +18,8 @@ ii) Install at least one of the supported environments:
 
 You can then simply run ac.py using:
 ```python
-    python ac.py with env_name='robotic_warehouse:rware-2color-tiny-4ag-v1' time_limit=500
+    # python ac.py with env_name='robotic_warehouse:rware-2color-tiny-4ag-v1' time_limit=500
+    python ac.py with env_name='rware-2color-tiny-2ag-easy-v1' time_limit=500 algorithm_mode='iac'
 ```
 The above command will load and run the tiny variation of the RWARE task with four agents. Other exciting environments shown in the paper include 'rware-2color-tiny4-ag-hard-v1', 
 'rware-2color-small-8ag-v1' or 'rware-2color-medium-16ag-v1' (replace in "robotic_warehouse:XXXX" above). Episode time limit should be kept at 500 as above.

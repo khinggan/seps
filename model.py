@@ -75,6 +75,8 @@ class MultiAgentFCNetwork(nn.Module):
         else:
             laac_indices = laac_indices.T.unsqueeze(0).unsqueeze(-1).expand(1, *out.shape[1:])
 
+        # out = out.gather(0, laac_indices).split(1, dim=1)
+        laac_indices = laac_indices.to(out.device)
         out = out.gather(0, laac_indices).split(1, dim=1)
 
         out = [x.squeeze(0).squeeze(0) for x in out]
@@ -135,7 +137,8 @@ class Policy(nn.Module):
 
     def sample_laac(self, batch_size):
         sample = Categorical(logits=self.laac_params).sample([batch_size])
-        self.laac_sample = torch.cat((torch.zeros(batch_size,1).int(), sample), dim=1)
+        # self.laac_sample = torch.cat((torch.zeros(batch_size,1).int(), sample), dim=1)
+        self.laac_sample = torch.cat((torch.zeros(batch_size, 1, dtype=torch.int32, device=sample.device), sample), dim=1)
         # print(self.laac_sample)
         # self.laac_sample = torch.zeros_like(self.laac_sample)
 
@@ -149,7 +152,8 @@ class Policy(nn.Module):
             action_mask = len(actor_features) * [0]
 
         dist = MultiCategorical(
-            [Categorical(logits=x + s) for x, s in zip(actor_features, action_mask)]
+            # [Categorical(logits=x + s) for x, s in zip(actor_features, action_mask)]
+            [Categorical(logits=x + s.to(x.device)) for x, s in zip(actor_features, action_mask)]
         )
         return dist
 

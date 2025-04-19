@@ -9,6 +9,8 @@ from os import path
 from pathlib import Path
 from collections import defaultdict
 
+import rware
+
 import pickle
 from cpprb import ReplayBuffer, create_before_add_func, create_env_dict
 import gym
@@ -22,7 +24,7 @@ from sacred.observers import (
     QueueObserver,
 )
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnvWrapper
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 
 from model import Policy
 from ops_utils import compute_clusters, ops_ingredient
@@ -57,14 +59,19 @@ def config(ops):
     dummy_vecenv = True
 
     # everything below is update steps (not env steps!)
-    total_steps = int(10e6)
-    log_interval = int(2e3)
-    save_interval = int(1e6)
-    eval_interval = int(1e4)
+    # total_steps = int(10e6)
+    # log_interval = int(2e3)
+    # save_interval = int(1e6)
+    # eval_interval = int(1e4)
+
+    total_steps = int(6e5)
+    log_interval = int(6e3)
+    save_interval = int(6e4)
+    eval_interval = int(6e4)
 
     architecture = {
-        "actor": [64, 64],
-        "critic": [64, 64],
+        "actor": [32, 32],
+        "critic": [32, 32],
     }
 
     lr = 3e-4
@@ -83,6 +90,7 @@ def config(ops):
 
     #
     device = "cpu"
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class Torcherize(VecEnvWrapper):
@@ -100,7 +108,7 @@ class Torcherize(VecEnvWrapper):
         obs = [torch.from_numpy(o).to(device) for o in obs]
         if self.observe_agent_id:
             ids = torch.eye(len(obs)).repeat_interleave(parallel_envs, 0).view(len(obs), -1, len(obs))
-            obs = [torch.cat((ids[i], obs[i]), dim=1) for i in range(len(obs))]
+            obs = [torch.cat((ids[i].to(device), obs[i].to(device)), dim=1) for i in range(len(obs))]
         return obs
 
     def step_async(self, actions):
@@ -114,7 +122,7 @@ class Torcherize(VecEnvWrapper):
         obs = [torch.from_numpy(o).float().to(device) for o in obs]
         if self.observe_agent_id:
             ids = torch.eye(len(obs)).repeat_interleave(parallel_envs, 0).view(len(obs), -1, len(obs))
-            obs = [torch.cat((ids[i], obs[i]), dim=1) for i in range(len(obs))]
+            obs = [torch.cat((ids[i].to(device), obs[i].to(device)), dim=1) for i in range(len(obs))]
 
         return (
             obs,
@@ -378,7 +386,7 @@ def main(
             with torch.no_grad():
                 actions = model.act(storage["obs"][-1], storage["action_mask"][-1])
             (obs, state, action_mask), reward, done, info = envs.step(actions)
-
+            # envs.render()
             if use_proper_termination:
                 bad_done = torch.FloatTensor(
                     [1.0 if i.get("TimeLimit.truncated", False) else 0.0 for i in info]
@@ -395,8 +403,12 @@ def main(
             if algorithm_mode == "ops" and step < ops["delay"] + ops["pretraining_times"] * ops["pretraining_steps"]:
                 for agent in range(len(obs)):
 
-                    one_hot_action = torch.nn.functional.one_hot(actions[agent], act_size).squeeze().numpy()
-                    one_hot_agent = torch.nn.functional.one_hot(torch.tensor(agent), agent_count).repeat(parallel_envs, 1).numpy()
+                    # one_hot_action = torch.nn.functional.one_hot(actions[agent], act_size).squeeze().numpy()
+                    one_hot_action = torch.nn.functional.one_hot(
+                        actions[agent], act_size
+                    ).squeeze() 
+                    # one_hot_agent = torch.nn.functional.one_hot(torch.tensor(agent), agent_count).repeat(parallel_envs, 1).numpy()
+                    one_hot_agent = torch.nn.functional.one_hot(torch.tensor(agent), agent_count).repeat(parallel_envs, 1)
 
                     if bad_done[0]:
                         nobs = info[0]["terminal_observation"]
@@ -405,11 +417,15 @@ def main(
                         nobs = obs
                         
                     data = {
-                        "obs": storage["obs"][-2][agent].numpy(),
+                        # "obs": storage["obs"][-2][agent].numpy(),
+                        "obs": storage["obs"][-2][agent],
                         "act": one_hot_action,
-                        "next_obs": nobs[agent].numpy(),
-                        "rew":  reward[:, agent].unsqueeze(-1).numpy(),
-                        "done": done[:].unsqueeze(-1).numpy(),
+                        # "next_obs": nobs[agent].numpy(),
+                        "next_obs": nobs[agent],
+                        # "rew":  reward[:, agent].unsqueeze(-1).numpy(),
+                        "rew":  reward[:, agent].unsqueeze(-1),
+                        # "done": done[:].unsqueeze(-1).numpy(),
+                        "done": done[:].unsqueeze(-1),
                         # "policy": np.array([model.laac_sample[0, agent].float().item()]),
                         "agent": one_hot_agent,
                         # "timestep": step,
